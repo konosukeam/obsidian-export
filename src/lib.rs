@@ -728,20 +728,42 @@ impl<'a> Exporter<'a> {
             ];
         }
         let target_file = target_file.unwrap();
-        // We use root_file() rather than current_file() here to make sure links are always
-        // relative to the outer-most note, which is the note which this content is inserted into
-        // in case of embedded notes.
-        let rel_link = diff_paths(
-            target_file,
-            context
-                .root_file()
-                .parent()
-                .expect("obsidian content files should always have a parent"),
-        )
-        .expect("should be able to build relative path when target file is found in vault");
 
-        let rel_link = rel_link.to_string_lossy();
-        let mut link = utf8_percent_encode(&rel_link, PERCENTENCODE_CHARS).to_string();
+        // Check if the target file has a slug in its frontmatter
+        let mut link = String::new();
+        let mut use_slug = false;
+
+        if is_markdown_file(target_file) {
+            if let Ok(content) = fs::read_to_string(target_file) {
+                if let Some(frontmatter_str) = content.strip_prefix("---").and_then(|s| s.find("---").map(|pos| &s[..pos])) {
+                    if let Ok(frontmatter) = frontmatter_from_str(frontmatter_str) {
+                        if let Some(slug) = frontmatter.get(&serde_yaml::Value::String("slug".to_string())) {
+                            if let Some(slug_str) = slug.as_str() {
+                                link = slug_str.to_string();
+                                use_slug = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !use_slug {
+            // We use root_file() rather than current_file() here to make sure links are always
+            // relative to the outer-most note, which is the note which this content is inserted into
+            // in case of embedded notes.
+            let rel_link = diff_paths(
+                target_file,
+                context
+                    .root_file()
+                    .parent()
+                    .expect("obsidian content files should always have a parent"),
+            )
+            .expect("should be able to build relative path when target file is found in vault");
+
+            let rel_link = rel_link.to_string_lossy();
+            link = utf8_percent_encode(&rel_link, PERCENTENCODE_CHARS).to_string();
+        }
 
         if let Some(section) = reference.section {
             link.push('#');
