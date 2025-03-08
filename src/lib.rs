@@ -415,14 +415,37 @@ impl<'a> Exporter<'a> {
     }
 
     fn export_note(&self, src: &Path, dest: &Path) -> Result<()> {
-        match is_markdown_file(src) {
-            true => self.parse_and_export_obsidian_note(src, dest),
-            false => copy_file(src, dest),
+        if !is_markdown_file(src) {
+            copy_file(src, dest).context(FileExportSnafu { path: src })?;
+            if self.preserve_mtime {
+                copy_mtime(src, dest).context(FileExportSnafu { path: src })?;
+            }
+            return Ok(());
         }
-        .context(FileExportSnafu { path: src })?;
+
+        // For markdown files, check if there's a slug in the frontmatter
+        let content = fs::read_to_string(src).context(ReadSnafu { path: src })?;
+        let mut final_dest = dest.to_path_buf();
+
+        // Extract frontmatter and check for slug
+        if let Some(frontmatter_str) = content.strip_prefix("---").and_then(|s| s.find("---").map(|pos| &s[..pos])) {
+            if let Ok(frontmatter) = frontmatter_from_str(frontmatter_str) {
+                if let Some(slug) = frontmatter.get(&serde_yaml::Value::String("slug".to_string())) {
+                    if let Some(slug_str) = slug.as_str() {
+                        // Use the slug as the filename
+                        if let Some(parent) = dest.parent() {
+                            final_dest = parent.join(format!("{}.md", slug_str));
+                        }
+                    }
+                }
+            }
+        }
+
+        self.parse_and_export_obsidian_note(src, &final_dest)
+            .context(FileExportSnafu { path: src })?;
 
         if self.preserve_mtime {
-            copy_mtime(src, dest).context(FileExportSnafu { path: src })?;
+            copy_mtime(src, &final_dest).context(FileExportSnafu { path: src })?;
         }
 
         Ok(())

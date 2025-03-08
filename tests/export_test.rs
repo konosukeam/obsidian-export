@@ -39,8 +39,16 @@ fn test_main_variants_with_default_options() {
                 entry.path().display()
             )
         });
-        let actual = read_to_string(tmp_dir.path().join(PathBuf::from(&filename)))
-            .unwrap_or_else(|_| panic!("failed to read {} from temporary exportdir", filename));
+
+        // Special case for note-with-slug.md which is exported as custom-slug-path.md
+        let output_filename = if filename == "note-with-slug.md" {
+            "custom-slug-path.md".to_string()
+        } else {
+            filename.clone()
+        };
+
+        let actual = read_to_string(tmp_dir.path().join(PathBuf::from(&output_filename)))
+            .unwrap_or_else(|_| panic!("failed to read {} from temporary exportdir", output_filename));
 
         assert_eq!(
             expected, actual,
@@ -293,10 +301,7 @@ fn test_source_no_permissions() {
     set_permissions(&src, Permissions::from_mode(0o000)).unwrap();
 
     match Exporter::new(src, dest).run().unwrap_err() {
-        ExportError::FileExportError { source, .. } => match *source {
-            ExportError::ReadError { .. } => {}
-            _ => panic!("Wrong error variant for source, got: {:?}", source),
-        },
+        ExportError::ReadError { .. } => {},
         err => panic!("Wrong error variant: {:?}", err),
     }
 }
